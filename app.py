@@ -11,7 +11,7 @@ from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
 import google.generativeai as genai
 
-# ===================== LOAD ENV =====================
+# ===================== ENV =====================
 load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
@@ -23,15 +23,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ===================== SESSION STATE =====================
+# ===================== SESSION =====================
 defaults = {
     "logged_in": False,
     "role": None,
-    "theme": "dark",
-    "memory": [],
     "chunks": [],
     "index": None,
-    "pdf_count": 0
+    "memory": []
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -44,125 +42,96 @@ USERS = {
 }
 
 def authenticate(u, p):
-    if u in USERS and USERS[u]["password"] == p:
-        return USERS[u]["role"]
-    return None
+    return USERS[u]["role"] if u in USERS and USERS[u]["password"] == p else None
 
-# ===================== CSS + 3D UI =====================
+# ===================== UI / CSS =====================
 st.markdown("""
 <style>
-/* ===== TYPING CURSOR ===== */
-.typing-cursor::after {
-    content: "|";
-    margin-left: 4px;
-    animation: blink 1s infinite;
-    font-weight: 600;
-}
-
-@keyframes blink {
-    0% { opacity: 1; }
-    50% { opacity: 0; }
-    100% { opacity: 1; }
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<style>
-
-/* ===== GLOBAL BACKGROUND ===== */
 .stApp {
-    background: linear-gradient(-45deg, #0F2027, #203A43, #2C5364, #1A2980);
+    background: linear-gradient(-45deg, #0F2027, #203A43, #2C5364);
     background-size: 400% 400%;
-    animation: gradientBG 12s ease infinite;
-    color: #FFFFFF;
+    animation: bg 12s ease infinite;
+    color: white;
 }
 
-@keyframes gradientBG {
-    0% {background-position: 0% 50%;}
-    50% {background-position: 100% 50%;}
-    100% {background-position: 0% 50%;}
+@keyframes bg {
+    0% {background-position:0% 50%}
+    50% {background-position:100% 50%}
+    100% {background-position:0% 50%}
 }
 
-/* ===== GLASS / BUBBLE FIX ===== */
 .glass {
-    background: rgba(255, 255, 255, 0.12);
-    border-radius: 20px;
-    padding: 25px;
-    margin-bottom: 25px;
+    background: rgba(255,255,255,0.12);
     backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    box-shadow: 0 20px 45px rgba(0,0,0,0.45);
-    color: #FFFFFF;               /* 🔑 FIX */
+    padding: 25px;
+    border-radius: 18px;
+    margin-bottom: 25px;
+    box-shadow: 0 25px 50px rgba(0,0,0,0.45);
+    color: white;
 }
 
-/* ===== FIX INPUT TEXT VISIBILITY ===== */
-.stTextInput input,
-.stTextArea textarea {
-    color: #FFFFFF !important;
-    background-color: rgba(0,0,0,0.35) !important;
-    border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.2);
+input, textarea {
+    background: rgba(0,0,0,0.35) !important;
+    color: white !important;
 }
 
-/* Placeholder text */
-.stTextInput input::placeholder,
-.stTextArea textarea::placeholder {
-    color: rgba(255,255,255,0.6);
-}
-
-/* ===== BUTTONS ===== */
-.stButton > button {
-    background: linear-gradient(135deg, #FF4ECD, #7F7FD5);
-    color: #FFFFFF;
+.stButton>button {
+    background: linear-gradient(135deg,#FF4ECD,#7F7FD5);
+    color: white;
     border-radius: 14px;
-    padding: 12px 28px;
-    font-size: 16px;
-    box-shadow: 0 8px 18px rgba(0,0,0,0.4);
-    transition: all 0.2s ease;
+    padding: 10px 26px;
 }
 
-.stButton > button:hover {
-    transform: translateY(-2px);
-}
-
-/* ===== TITLES ===== */
-.login-title {
-    font-size: 42px;
-    font-weight: 700;
-    color: #00F5FF;
-    text-shadow: 0 0 20px rgba(0,245,255,0.6);
-}
-
-.login-subtitle {
-    color: #E0E0E0;
-    margin-bottom: 30px;
-}
-
-/* ===== ANSWER BOX ===== */
 .answer-box {
-    background: linear-gradient(135deg, #00E676, #00C853);
-    color: #000000;
+    background: linear-gradient(135deg,#00E676,#00C853);
+    color: black;
     padding: 20px;
     border-radius: 14px;
 }
 
-/* ===== SOURCES ===== */
-.source {
-    color: #FFD54F;
+.typing::after {
+    content: "▌";
+    animation: blink 1s infinite;
 }
 
+@keyframes blink {
+    50% {opacity:0}
+}
+
+.footer {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    background: rgba(0,0,0,0.6);
+    color: #00F5FF;
+    padding: 8px;
+    font-weight: 600;
+    overflow: hidden;
+}
+
+.footer span {
+    display: inline-block;
+    animation: move 18s linear infinite;
+    white-space: nowrap;
+}
+
+@keyframes move {
+    0% {transform: translateX(100%)}
+    100% {transform: translateX(-100%)}
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ===================== LOGIN PAGE =====================
+# ===================== LOGIN =====================
 if not st.session_state.logged_in:
-    st.markdown("<div class='login-wrapper'>", unsafe_allow_html=True)
-    st.image("assets/university_logo.png", width=120)
-    st.markdown("<h1 class='login-title'>Context-Aware ChatPDF</h1>", unsafe_allow_html=True)
-    st.markdown("<h3 class='login-subtitle'>LLM-Based Document Intelligence System</h3>", unsafe_allow_html=True)
-
     st.markdown("<div class='glass'>", unsafe_allow_html=True)
+
+    if os.path.exists("assets/university_logo.png"):
+        st.image("assets/university_logo.png", width=120)
+
+    st.markdown("## Context-Aware ChatPDF")
+    st.markdown("### LLM-Based Document Intelligence System")
+
     u = st.text_input("Username")
     p = st.text_input("Password", type="password")
 
@@ -175,7 +144,7 @@ if not st.session_state.logged_in:
         else:
             st.error("Invalid credentials")
 
-    st.markdown("</div></div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
     st.stop()
 
 # ===================== MODELS =====================
@@ -187,16 +156,35 @@ def ocr_pdf(path):
     images = convert_from_path(path)
     return " ".join(pytesseract.image_to_string(img) for img in images)
 
-# ===================== PDF PROCESSING =====================
+# ===================== SECTION-AWARE CHUNKING =====================
+SECTION_KEYWORDS = {
+    "education": ["education", "qualification", "degree"],
+    "skills": ["skills", "technologies", "tools"],
+    "experience": ["experience", "internship", "work"],
+    "projects": ["projects"],
+    "summary": ["summary", "profile"]
+}
+
+def detect_section(line):
+    for sec, keys in SECTION_KEYWORDS.items():
+        if any(k in line.lower() for k in keys):
+            return sec
+    return "general"
+
 def extract_chunks(path, name):
     doc = fitz.open(path)
     chunks = []
+    current = "general"
+
     for page_no, page in enumerate(doc, start=1):
         text = page.get_text().strip() or ocr_pdf(path)
-        words = text.split()
-        for i in range(0, len(words), 400):
+        for line in text.split("\n"):
+            sec = detect_section(line)
+            if sec != "general":
+                current = sec
             chunks.append({
-                "text": " ".join(words[i:i+400]),
+                "text": line.strip(),
+                "section": current,
                 "pdf": name,
                 "page": page_no
             })
@@ -208,11 +196,47 @@ def build_index(chunks):
     index.add(np.array(emb))
     return index
 
-# ===================== GEMINI ANSWER =====================
+# ===================== NORMALIZE QUESTION =====================
+def normalize_question(q):
+    q = q.lower().strip()
+    mapping = {
+        "name": "What is the name mentioned in the document?",
+        "qualification": "What are the educational qualifications?",
+        "qualifications": "What are the educational qualifications?",
+        "skills": "What skills are mentioned?",
+        "experience": "What experience is mentioned?",
+        "projects": "What projects are mentioned?"
+    }
+    if q in mapping:
+        return mapping[q]
+    if len(q.split()) <= 2:
+        return f"What information does the document provide about {q}?"
+    return q
+
+# ===================== FALLBACK =====================
+def extractive_fallback(question, context):
+    q_words = set(question.lower().split())
+    lines = [l for l in context.split("\n") if len(l.strip()) > 3]
+
+    scored = []
+    for line in lines:
+        score = sum(1 for w in q_words if w in line.lower())
+        if score > 0:
+            scored.append((score, line))
+
+    if scored:
+        scored.sort(reverse=True)
+        return "Relevant information found in document:\n" + "\n".join(l for _, l in scored[:5])
+
+    return "The document does not contain sufficient information to answer this question."
+
+# ===================== ANSWER =====================
 def generate_answer(q, context):
     prompt = f"""
-Answer strictly using the context.
-If not found, say "Not found in document".
+Answer using ONLY the document context.
+Summarize or rephrase if needed.
+If partially present, give best possible answer.
+If missing, clearly say so.
 
 Context:
 {context}
@@ -221,32 +245,27 @@ Question:
 {q}
 """
     try:
-        return llm.generate_content(prompt).text
+        ans = llm.generate_content(prompt).text.strip()
+        if ans and "not found" not in ans.lower():
+            return ans
+        return extractive_fallback(q, context)
     except:
-        return "Answer not found in document."
+        return extractive_fallback(q, context)
 
 # ===================== TYPEWRITER =====================
 def typewriter(text):
-    placeholder = st.empty()
-    rendered_text = ""
-
-    for char in text:
-        rendered_text += char
-        placeholder.markdown(
-            f"<div class='typing-cursor'>{rendered_text}</div>",
-            unsafe_allow_html=True
-        )
+    box = st.empty()
+    out = ""
+    for c in text:
+        out += c
+        box.markdown(f"<div class='typing'>{out}</div>", unsafe_allow_html=True)
         time.sleep(0.015)
-
-    # Remove cursor after typing completes
-    placeholder.markdown(rendered_text)
-
+    box.markdown(out)
 
 # ===================== ADMIN UPLOAD =====================
 if st.session_state.role == "admin":
     st.markdown("<div class='glass'>", unsafe_allow_html=True)
-    st.markdown("## 📤 Upload PDFs")
-
+    st.markdown("## Upload PDFs")
     files = st.file_uploader("Upload PDFs", type="pdf", accept_multiple_files=True)
 
     if files:
@@ -260,74 +279,38 @@ if st.session_state.role == "admin":
 
         st.session_state.chunks = all_chunks
         st.session_state.index = build_index(all_chunks)
-        st.session_state.pdf_count = len(files)
         st.success("PDFs indexed successfully")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ===================== CHAT =====================
 st.markdown("<div class='glass'>", unsafe_allow_html=True)
-st.markdown("## 💬 Ask Your Documents")
+st.markdown("## Ask Your Documents")
 
-q = st.text_input("Ask a question")
+raw_q = st.text_input("Ask a question")
 
-if st.button("Ask") and q:
-    with st.spinner("Analyzing documents..."):
+if raw_q and st.button("Ask"):
+    q = normalize_question(raw_q)
+
+    with st.spinner("Thinking..."):
         q_emb = embedder.encode([q])
-        _, idx = st.session_state.index.search(q_emb, 5)
+        _, idx = st.session_state.index.search(q_emb, 10)
 
-        context, sources = "", set()
-        for i in idx[0]:
-            c = st.session_state.chunks[i]
-            context += c["text"] + "\n"
-            sources.add(f"{c['pdf']} - Page {c['page']}")
-
+        context = "\n".join(st.session_state.chunks[i]["text"] for i in idx[0])
         answer = generate_answer(q, context)
-        st.session_state.memory.append((q, answer))
-        st.session_state.memory = st.session_state.memory[-5:]
 
     st.markdown("<div class='answer-box'>", unsafe_allow_html=True)
-    st.markdown("### ✅ Answer")
+    st.markdown("### Answer")
     typewriter(answer)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("### 📚 Sources")
-    for s in sources:
-        st.markdown(f"<div class='source'>• {s}</div>", unsafe_allow_html=True)
-
 st.markdown("</div>", unsafe_allow_html=True)
+
+# ===================== FOOTER =====================
 st.markdown("""
-<style>
-.footer-marquee {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background: rgba(0,0,0,0.6);
-    backdrop-filter: blur(8px);
-    color: #00F5FF;
-    padding: 8px 0;
-    font-weight: 600;
-    z-index: 999;
-    overflow: hidden;
-}
-
-.footer-marquee span {
-    display: inline-block;
-    padding-left: 100%;
-    animation: scrollText 18s linear infinite;
-    white-space: nowrap;
-}
-
-@keyframes scrollText {
-    0%   { transform: translateX(0); }
-    100% { transform: translateX(-100%); }
-}
-</style>
-
-<div class="footer-marquee">
-    <span>
-        👥 Project Team: Shubhadeep Patra | Soumyashree Priyadarshi Kar | Pratik Kumar Kar | Pratyush Kumar Pani | Siksha O Anusandhan University (ITER)
-    </span>
+<div class="footer">
+<span>
+👥 Project Team: Shubhadeep Patra | Soumyashree Priyadarshi Kar | Pratik Kumar Kar | Pratyush Kumar Pani | Siksha O Anusandhan University (ITER)
+</span>
 </div>
 """, unsafe_allow_html=True)
