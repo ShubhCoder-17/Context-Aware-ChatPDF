@@ -38,7 +38,7 @@ for k, v in defaults.items():
 # ===================== USERS =====================
 USERS = {
     "admin": {"password": "admin123", "role": "admin"},
-    "user": {"password": "user123", "role": "user"},
+    "user": {"password": "user123", "role": "user"}
 }
 
 def authenticate(u, p):
@@ -161,7 +161,7 @@ SECTION_KEYWORDS = {
     "education": ["education", "qualification", "degree"],
     "skills": ["skills", "technologies", "tools"],
     "experience": ["experience", "internship", "work"],
-    "projects": ["projects"],
+    "projects": ["project", "projects"],
     "summary": ["summary", "profile"]
 }
 
@@ -182,12 +182,13 @@ def extract_chunks(path, name):
             sec = detect_section(line)
             if sec != "general":
                 current = sec
-            chunks.append({
-                "text": line.strip(),
-                "section": current,
-                "pdf": name,
-                "page": page_no
-            })
+            if line.strip():
+                chunks.append({
+                    "text": line.strip(),
+                    "section": current,
+                    "pdf": name,
+                    "page": page_no
+                })
     return chunks
 
 def build_index(chunks):
@@ -196,16 +197,17 @@ def build_index(chunks):
     index.add(np.array(emb))
     return index
 
-# ===================== NORMALIZE QUESTION =====================
+# ===================== QUESTION NORMALIZER =====================
 def normalize_question(q):
     q = q.lower().strip()
     mapping = {
         "name": "What is the name mentioned in the document?",
         "qualification": "What are the educational qualifications?",
         "qualifications": "What are the educational qualifications?",
+        "education": "What is the educational background?",
         "skills": "What skills are mentioned?",
-        "experience": "What experience is mentioned?",
-        "projects": "What projects are mentioned?"
+        "projects": "What projects are mentioned?",
+        "experience": "What experience is mentioned?"
     }
     if q in mapping:
         return mapping[q]
@@ -213,33 +215,55 @@ def normalize_question(q):
         return f"What information does the document provide about {q}?"
     return q
 
-# ===================== FALLBACK =====================
-def extractive_fallback(question, context):
-    q_words = set(question.lower().split())
-    lines = [l for l in context.split("\n") if len(l.strip()) > 3]
+# ===================== SECTION-AWARE FALLBACK =====================
+def extractive_fallback(question, chunks):
+    q = question.lower()
 
+    section_map = {
+        "project": "projects",
+        "projects": "projects",
+        "skill": "skills",
+        "skills": "skills",
+        "experience": "experience",
+        "education": "education",
+        "qualification": "education",
+        "qualifications": "education"
+    }
+
+    for key, sec in section_map.items():
+        if key in q:
+            lines = [
+                c["text"] for c in chunks
+                if c["section"] == sec and len(c["text"]) > 3
+            ]
+            if lines:
+                return f"{sec.capitalize()} found in document:\n" + "\n".join(lines)
+
+    # General fallback
+    q_words = set(q.split())
     scored = []
-    for line in lines:
-        score = sum(1 for w in q_words if w in line.lower())
+    for c in chunks:
+        score = sum(1 for w in q_words if w in c["text"].lower())
         if score > 0:
-            scored.append((score, line))
+            scored.append((score, c["text"]))
 
     if scored:
         scored.sort(reverse=True)
-        return "Relevant information found in document:\n" + "\n".join(l for _, l in scored[:5])
+        return "Relevant information found in document:\n" + \
+               "\n".join(t for _, t in scored[:7])
 
     return "The document does not contain sufficient information to answer this question."
 
 # ===================== ANSWER =====================
-def generate_answer(q, context):
+def generate_answer(q, context_text, context_chunks):
     prompt = f"""
 Answer using ONLY the document context.
-Summarize or rephrase if needed.
-If partially present, give best possible answer.
-If missing, clearly say so.
+Summarize if required.
+If multiple items exist, list them clearly.
+If missing, say so honestly.
 
 Context:
-{context}
+{context_text}
 
 Question:
 {q}
@@ -248,9 +272,9 @@ Question:
         ans = llm.generate_content(prompt).text.strip()
         if ans and "not found" not in ans.lower():
             return ans
-        return extractive_fallback(q, context)
+        return extractive_fallback(q, context_chunks)
     except:
-        return extractive_fallback(q, context)
+        return extractive_fallback(q, context_chunks)
 
 # ===================== TYPEWRITER =====================
 def typewriter(text):
@@ -266,8 +290,8 @@ def typewriter(text):
 if st.session_state.role == "admin":
     st.markdown("<div class='glass'>", unsafe_allow_html=True)
     st.markdown("## Upload PDFs")
-    files = st.file_uploader("Upload PDFs", type="pdf", accept_multiple_files=True)
 
+    files = st.file_uploader("Upload PDFs", type="pdf", accept_multiple_files=True)
     if files:
         os.makedirs("uploaded_pdfs", exist_ok=True)
         all_chunks = []
@@ -296,8 +320,10 @@ if raw_q and st.button("Ask"):
         q_emb = embedder.encode([q])
         _, idx = st.session_state.index.search(q_emb, 10)
 
-        context = "\n".join(st.session_state.chunks[i]["text"] for i in idx[0])
-        answer = generate_answer(q, context)
+        retrieved = [st.session_state.chunks[i] for i in idx[0]]
+        context_text = "\n".join(c["text"] for c in retrieved)
+
+        answer = generate_answer(q, context_text, retrieved)
 
     st.markdown("<div class='answer-box'>", unsafe_allow_html=True)
     st.markdown("### Answer")
